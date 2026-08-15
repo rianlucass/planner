@@ -74,7 +74,7 @@ export function TaskDndBoard({ boardId, groups, statuses }: { boardId: string; g
         })
       }}
     >
-      <div className="grid gap-4">
+      <div className="grid w-full min-w-0 max-w-full gap-4">
         {error && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">{error}</p>}
         {groups.map((group) => <GroupSection key={group.id} boardId={boardId} group={{ ...group, tasks: buckets[group.id] ?? [] }} statuses={statuses} dndDisabled={saving} />)}
       </div>

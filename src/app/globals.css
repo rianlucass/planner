@@ -130,9 +130,9 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply max-w-full overflow-x-clip bg-background text-foreground;
   }
   html {
-    @apply font-sans;
+    @apply max-w-full overflow-x-clip font-sans;
   }
 }

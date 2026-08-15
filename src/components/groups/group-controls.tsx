@@ -37,7 +37,7 @@ function GroupForm({ boardId, group, onSuccess }: { boardId: string; group?: { i
         <fieldset className="grid gap-2">
           <legend className="text-xs font-medium">Cor</legend>
           <input type="hidden" name="color" value={color} />
-          <div className="flex gap-2">
+          <div className="flex max-w-full flex-wrap gap-2">
             {colors.map((value) => (
               <button key={value} type="button" onClick={() => setColor(value)} aria-label={`Selecionar cor ${value}`} aria-pressed={color === value}
                 className={cn("size-7 rounded-full border-2 border-transparent transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", color === value && "border-foreground ring-2 ring-background")}
@@ -92,8 +92,8 @@ export function GroupSection({ boardId, group, statuses, dndDisabled = false }: 
   const [deleteOpen, setDeleteOpen] = useState(false)
   const { ref, isDropTarget } = useDroppable({ id: group.id, type: "group", accept: "task", collisionPriority: -1, disabled: dndDisabled || !expanded, data: { groupId: group.id } })
   return (
-    <section ref={ref} className={cn("overflow-hidden rounded-lg border bg-card/80 shadow-sm transition-[border-color,box-shadow]", isDropTarget && "border-primary/70 ring-2 ring-primary/20")}>
-      <div className="flex h-11 items-center gap-2 border-b px-3" style={{ borderLeftWidth: 3, borderLeftColor: group.color ?? "#6366f1" }}>
+    <section ref={ref} className={cn("w-full min-w-0 max-w-full overflow-hidden rounded-lg border bg-card/80 shadow-sm transition-[border-color,box-shadow]", isDropTarget && "border-primary/70 ring-2 ring-primary/20")}>
+      <div className="flex h-11 min-w-0 max-w-full items-center gap-2 border-b px-3" style={{ borderLeftWidth: 3, borderLeftColor: group.color ?? "#6366f1" }}>
         <button type="button" onClick={() => setExpanded((value) => !value)} className="flex min-w-0 flex-1 items-center gap-2 text-left" aria-expanded={expanded}>
           <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !expanded && "-rotate-90")} />
           <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: group.color ?? "#6366f1" }} />

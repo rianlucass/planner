@@ -106,7 +106,7 @@ function SortableTaskRow({ boardId, groupId, task, index, statuses, disabled }: 
 
 export function TaskTable({ boardId, groupId, tasks, statuses, dndDisabled = false }: { boardId: string; groupId: string; tasks: Task[]; statuses: BoardStatus[]; dndDisabled?: boolean }) {
   return (
-    <div className="overflow-x-auto bg-background/20">
+    <div className="w-full min-w-0 max-w-full touch-pan-x overflow-x-auto overscroll-x-contain bg-background/20 [contain:inline-size_paint]">
       <table className="w-full min-w-[620px] table-fixed text-left text-xs">
         <thead className="border-b bg-muted/20 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           <tr><th className="w-[48%] px-3 py-2">Tarefa</th><th className="w-[18%] px-3 py-2">Responsável</th><th className="w-[14%] px-3 py-2">Data</th><th className="w-[14%] px-3 py-2">Status</th><th className="w-10 px-2 py-2"><span className="sr-only">Ações</span></th></tr>

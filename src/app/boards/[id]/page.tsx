@@ -50,11 +50,11 @@ export default async function BoardPage({ params }: { params: Promise<{ id: stri
 
   return (
     <>
-      <header className="flex flex-col gap-5">
+      <header className="flex min-w-0 max-w-full flex-col gap-5">
         <Button variant="ghost" size="sm" render={<Link href="/boards" className="w-fit" />}><ArrowLeft />Voltar para Quadros</Button>
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Quadro</p><h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">{board.name}</h1><p className="mt-1.5 text-sm text-muted-foreground">Organize o trabalho em grupos dentro deste quadro.</p></div>
-          <div className="flex flex-wrap gap-2"><ManageStatusesDialog boardId={board.id} statuses={statuses} /><NewGroupDialog boardId={board.id} /></div>
+        <div className="flex min-w-0 max-w-full flex-col justify-between gap-4 sm:flex-row sm:items-end">
+          <div className="min-w-0 max-w-full sm:flex-1"><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Quadro</p><h1 className="mt-1 max-w-full break-words text-2xl font-semibold tracking-tight sm:text-3xl">{board.name}</h1><p className="mt-1.5 max-w-full break-words text-sm text-muted-foreground">Organize o trabalho em grupos dentro deste quadro.</p></div>
+          <div className="grid w-full min-w-0 grid-cols-1 gap-2 min-[400px]:grid-cols-2 sm:flex sm:w-auto sm:shrink-0 sm:flex-nowrap"><ManageStatusesDialog boardId={board.id} statuses={statuses} /><NewGroupDialog boardId={board.id} /></div>
         </div>
       </header>
 

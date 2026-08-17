@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto"
 import { revalidatePath } from "next/cache"
 
 import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { sanitizeTaskUpdateDocument, type TaskUpdateDocument } from "@/lib/task-update-content"
 
 const attachmentBucket = "task-attachments"
 const maxFileSize = 5 * 1024 * 1024
@@ -12,7 +13,7 @@ const extensionByMimeType: Record<string, string> = { "image/jpeg": "jpg", "imag
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export type TaskAttachment = { id: string; originalName: string | null; mimeType: string; sizeBytes: number | null; createdAt: string; signedUrl: string }
-export type TaskUpdate = { id: string; content: string; createdAt: string; updatedAt: string }
+export type TaskUpdate = { id: string; content: string; contentJson: TaskUpdateDocument | null; createdAt: string; updatedAt: string }
 export type TaskDetails = { id: string; title: string; taskDate: string | null; assigneeIds: string[]; updates: TaskUpdate[]; attachments: TaskAttachment[] }
 export type TaskDetailsResult = { data: TaskDetails | null; error: string | null }
 export type TaskDetailMutationResult = { success: boolean; error: string | null }
@@ -53,7 +54,7 @@ export async function getTaskDetails(boardId: string, taskId: string): Promise<T
 
   const supabase = createSupabaseServerClient()
   const [{ data: updates, error: updatesError }, { data: attachments, error: attachmentsError }, { data: assignees, error: assigneesError }] = await Promise.all([
-    supabase.from("task_updates").select("id, content, created_at, updated_at").eq("task_id", taskId).order("created_at", { ascending: false }),
+    supabase.from("task_updates").select("id, content, content_json, created_at, updated_at").eq("task_id", taskId).order("created_at", { ascending: false }),
     supabase.from("task_attachments").select("id, storage_path, original_name, mime_type, size_bytes, created_at").eq("task_id", taskId).order("created_at", { ascending: false }),
     supabase.from("task_assignees").select("member_id").eq("task_id", taskId),
   ])
@@ -81,7 +82,7 @@ export async function getTaskDetails(boardId: string, taskId: string): Promise<T
       title: task.title,
       taskDate: task.task_date,
       assigneeIds: (assignees ?? []).map((assignee) => assignee.member_id),
-      updates: (updates ?? []).map((update) => ({ id: update.id, content: update.content, createdAt: update.created_at, updatedAt: update.updated_at })),
+      updates: (updates ?? []).map((update) => ({ id: update.id, content: update.content, contentJson: sanitizeTaskUpdateDocument(update.content_json)?.document ?? null, createdAt: update.created_at, updatedAt: update.updated_at })),
       attachments: (attachments ?? []).flatMap((attachment) => {
         const signedUrl = signedUrlByPath.get(attachment.storage_path)
         return signedUrl ? [{ id: attachment.id, originalName: attachment.original_name, mimeType: attachment.mime_type, sizeBytes: attachment.size_bytes, createdAt: attachment.created_at, signedUrl }] : []
@@ -91,21 +92,19 @@ export async function getTaskDetails(boardId: string, taskId: string): Promise<T
   }
 }
 
-export async function createTaskUpdate(boardId: string, taskId: string, content: string): Promise<TaskUpdateMutationResult> {
+export async function createTaskUpdate(boardId: string, taskId: string, contentJson: unknown): Promise<TaskUpdateMutationResult> {
   const task = await getTaskForBoard(taskId, boardId)
   if (!task) return { success: false, error: "Tarefa não encontrada neste quadro." }
-  if (typeof content !== "string") return { success: false, error: "Conteúdo inválido." }
-  const normalizedContent = content.trim()
-  if (!normalizedContent) return { success: false, error: "Escreva o conteúdo da atualização." }
-  if (normalizedContent.length > 500_000) return { success: false, error: "A atualização deve ter no máximo 500 mil caracteres." }
+  const sanitized = sanitizeTaskUpdateDocument(contentJson)
+  if (!sanitized) return { success: false, error: "O conteúdo Rich Text é inválido ou está vazio." }
 
-  const { data, error } = await createSupabaseServerClient().from("task_updates").insert({ task_id: taskId, content: normalizedContent }).select("id, content, created_at, updated_at").single()
+  const { data, error } = await createSupabaseServerClient().from("task_updates").insert({ task_id: taskId, content: sanitized.text, content_json: sanitized.document }).select("id, content, content_json, created_at, updated_at").single()
   if (error) {
     console.error("Erro ao criar atualização:", error.message)
     return { success: false, error: "Não foi possível adicionar a atualização." }
   }
   revalidatePath(`/boards/${boardId}`)
-  return { success: true, error: null, update: { id: data.id, content: data.content, createdAt: data.created_at, updatedAt: data.updated_at } }
+  return { success: true, error: null, update: { id: data.id, content: data.content, contentJson: sanitizeTaskUpdateDocument(data.content_json)?.document ?? sanitized.document, createdAt: data.created_at, updatedAt: data.updated_at } }
 }
 
 export async function deleteTaskUpdate(boardId: string, taskId: string, updateId: string): Promise<TaskDetailMutationResult> {

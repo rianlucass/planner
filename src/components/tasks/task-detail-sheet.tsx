@@ -11,7 +11,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { TaskAssigneePicker } from "@/components/tasks/task-assignee-picker"
 import { TaskDatePicker } from "@/components/tasks/task-date-picker"
+import { TaskUpdateEditor, TaskUpdateRichContent } from "@/components/tasks/task-update-editor"
 import type { Member } from "@/lib/members"
+import { emptyTaskUpdateDocument, type TaskUpdateComposerValue } from "@/lib/task-update-content"
 
 const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"])
 const maxFileSize = 5 * 1024 * 1024
@@ -27,16 +29,19 @@ function formatUpdateDate(value: string) {
   return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)).replace(",", " •")
 }
 
-function UpdateContent({ content }: { content: string }) {
+function LegacyUpdateContent({ content }: { content: string }) {
   const parts = content.split(/(https?:\/\/[^\s]+)/g)
   return <p className="max-w-full whitespace-pre-wrap break-words text-sm leading-6">{parts.map((part, index) => /^https?:\/\//.test(part) ? <a key={`${part}-${index}`} href={part} target="_blank" rel="noopener noreferrer" className="break-all text-primary underline underline-offset-2 hover:opacity-80">{part}</a> : part)}</p>
 }
+
+const emptyComposer: TaskUpdateComposerValue = { document: emptyTaskUpdateDocument, text: "", isEmpty: true }
 
 export function TaskDetailSheet({ boardId, taskId, title, taskDate, onTaskDateChange, members, allMembers, boardMemberIds, assigneeIds, onAssigneeIdsChange }: { boardId: string; taskId: string; title: string; taskDate: string | null; onTaskDateChange: (value: string | null) => void; members: Member[]; allMembers: Member[]; boardMemberIds: string[]; assigneeIds: string[]; onAssigneeIdsChange: (value: string[]) => void }) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [details, setDetails] = useState<TaskDetails | null>(null)
-  const [composer, setComposer] = useState("")
+  const [composer, setComposer] = useState<TaskUpdateComposerValue>(emptyComposer)
+  const [editorVersion, setEditorVersion] = useState(0)
   const [addingUpdate, setAddingUpdate] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -49,7 +54,7 @@ export function TaskDetailSheet({ boardId, taskId, title, taskDate, onTaskDateCh
   const fileInputRef = useRef<HTMLInputElement>(null)
   const resizeStartRef = useRef({ x: 0, width: 0 })
   const panelWidthRef = useRef(0)
-  const dirty = composer.trim().length > 0
+  const dirty = !composer.isEmpty
 
   function preparePanelWidth() {
     const viewportWidth = window.innerWidth
@@ -68,7 +73,8 @@ export function TaskDetailSheet({ boardId, taskId, title, taskDate, onTaskDateCh
     setOpen(true)
     setLoading(true)
     setError(null)
-    setComposer("")
+    setComposer(emptyComposer)
+    setEditorVersion((current) => current + 1)
     const result = await getTaskDetails(boardId, taskId)
     setLoading(false)
     if (!result.data) {
@@ -84,17 +90,18 @@ export function TaskDetailSheet({ boardId, taskId, title, taskDate, onTaskDateCh
   }
 
   async function addUpdate() {
-    if (!composer.trim()) return
+    if (composer.isEmpty) return
     setAddingUpdate(true)
     setError(null)
-    const result = await createTaskUpdate(boardId, taskId, composer)
+    const result = await createTaskUpdate(boardId, taskId, composer.document)
     setAddingUpdate(false)
     if (!result.success || !result.update) {
       setError(result.error ?? "Não foi possível adicionar a atualização.")
       return
     }
     setDetails((current) => current ? { ...current, updates: [result.update as TaskUpdate, ...current.updates] } : current)
-    setComposer("")
+    setComposer(emptyComposer)
+    setEditorVersion((current) => current + 1)
   }
 
   function validateFile(file: File) {
@@ -135,17 +142,6 @@ export function TaskDetailSheet({ boardId, taskId, title, taskDate, onTaskDateCh
     }
     setUploading(false)
     if (fileInputRef.current) fileInputRef.current.value = ""
-  }
-
-  function handlePaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
-    const imageItems = Array.from(event.clipboardData.items).filter((item) => item.kind === "file" && item.type.startsWith("image/"))
-    if (imageItems.length === 0) return
-    event.preventDefault()
-    const files = imageItems.flatMap((item) => {
-      const file = item.getAsFile()
-      return file ? [file] : []
-    })
-    void uploadFiles(files)
   }
 
   async function removeAttachment() {
@@ -221,13 +217,13 @@ export function TaskDetailSheet({ boardId, taskId, title, taskDate, onTaskDateCh
               <div className="grid min-w-0 max-w-full gap-8">
                 <section className="grid min-w-0 max-w-full gap-3">
                   <div><h3 className="text-sm font-semibold">Nova atualização</h3><p className="mt-0.5 text-xs text-muted-foreground">Adicione um roteiro, observação, link ou referência.</p></div>
-                  <textarea value={composer} onChange={(event) => setComposer(event.target.value)} onPaste={handlePaste} maxLength={500000} placeholder="Escreva um roteiro, observação, link ou referência..." className="min-h-36 w-full resize-y rounded-lg border border-input bg-background/50 px-3 py-3 text-sm leading-6 outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/30" />
-                  <div className="flex min-w-0 max-w-full flex-col gap-3 min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-between"><p className="min-w-0 break-words text-[11px] text-muted-foreground">Cole uma imagem com Ctrl+V para anexá-la.</p><Button className="w-full min-[420px]:w-auto" size="sm" onClick={() => void addUpdate()} disabled={!composer.trim() || addingUpdate}>{addingUpdate ? <Loader2 className="animate-spin" /> : <Plus />}Adicionar atualização</Button></div>
+                  <TaskUpdateEditor key={editorVersion} onChange={setComposer} onPasteImages={(files) => void uploadFiles(files)} disabled={addingUpdate} />
+                  <div className="flex min-w-0 max-w-full flex-col gap-3 min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-between"><p className="min-w-0 break-words text-[11px] text-muted-foreground">Cole uma imagem com Ctrl+V para enviá-la aos Anexos.</p><Button className="w-full min-[420px]:w-auto" size="sm" onClick={() => void addUpdate()} disabled={composer.isEmpty || addingUpdate}>{addingUpdate ? <Loader2 className="animate-spin" /> : <Plus />}Adicionar atualização</Button></div>
                 </section>
 
                 <section className="grid min-w-0 max-w-full gap-3">
                   <div><h3 className="text-sm font-semibold">Atualizações</h3><p className="mt-0.5 text-xs text-muted-foreground">Mais recentes primeiro.</p></div>
-                  {details.updates.length === 0 ? <div className="rounded-lg border border-dashed px-4 py-8 text-center text-xs text-muted-foreground">Nenhuma atualização publicada.</div> : <div className="grid min-w-0 max-w-full gap-3">{details.updates.map((update) => <article key={update.id} className="min-w-0 max-w-full rounded-lg border bg-card/60 p-4"><UpdateContent content={update.content} /><footer className="mt-4 flex min-w-0 items-center justify-between gap-3 border-t pt-3 text-[11px] text-muted-foreground"><span className="min-w-0 break-words">{formatUpdateDate(update.createdAt)}{new Date(update.updatedAt).getTime() - new Date(update.createdAt).getTime() > 1000 && " • Editado"}</span><DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" aria-label="Ações da atualização" />}><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem variant="destructive" onClick={() => setDeleteUpdateTarget(update)}><Trash2 />Excluir</DropdownMenuItem></DropdownMenuContent></DropdownMenu></footer></article>)}</div>}
+                  {details.updates.length === 0 ? <div className="rounded-lg border border-dashed px-4 py-8 text-center text-xs text-muted-foreground">Nenhuma atualização publicada.</div> : <div className="grid min-w-0 max-w-full gap-3">{details.updates.map((update) => <article key={update.id} className="min-w-0 max-w-full rounded-lg border bg-card/60 p-4">{update.contentJson ? <TaskUpdateRichContent content={update.contentJson} /> : <LegacyUpdateContent content={update.content} />}<footer className="mt-4 flex min-w-0 items-center justify-between gap-3 border-t pt-3 text-[11px] text-muted-foreground"><span className="min-w-0 break-words">{formatUpdateDate(update.createdAt)}{new Date(update.updatedAt).getTime() - new Date(update.createdAt).getTime() > 1000 && " • Editado"}</span><DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" aria-label="Ações da atualização" />}><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem variant="destructive" onClick={() => setDeleteUpdateTarget(update)}><Trash2 />Excluir</DropdownMenuItem></DropdownMenuContent></DropdownMenu></footer></article>)}</div>}
                 </section>
 
                 <section className="grid min-w-0 max-w-full gap-3">

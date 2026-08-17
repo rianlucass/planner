@@ -38,28 +38,28 @@ function isSafeHref(value: string) {
   }
 }
 
-function sanitizeMarks(value: unknown): JSONContent["marks"] | null {
-  if (value === undefined) return undefined
-  if (!Array.isArray(value)) return null
+function sanitizeMarks(value: unknown): JSONContent["marks"] {
+  if (!Array.isArray(value)) return undefined
 
   const marks: NonNullable<JSONContent["marks"]> = []
   for (const mark of value) {
-    if (!isRecord(mark) || typeof mark.type !== "string") return null
+    if (!isRecord(mark) || typeof mark.type !== "string") continue
     if (simpleMarkTypes.has(mark.type)) {
       marks.push({ type: mark.type })
       continue
     }
     if (mark.type === "textStyle") {
-      if (!isRecord(mark.attrs) || typeof mark.attrs.fontSize !== "string" || !allowedFontSizes.has(mark.attrs.fontSize)) return null
-      marks.push({ type: "textStyle", attrs: { fontSize: mark.attrs.fontSize } })
+      if (isRecord(mark.attrs) && typeof mark.attrs.fontSize === "string" && allowedFontSizes.has(mark.attrs.fontSize)) {
+        marks.push({ type: "textStyle", attrs: { fontSize: mark.attrs.fontSize } })
+      }
       continue
     }
     if (mark.type === "link") {
-      if (!isRecord(mark.attrs) || typeof mark.attrs.href !== "string" || !isSafeHref(mark.attrs.href)) return null
-      marks.push({ type: "link", attrs: { href: mark.attrs.href, target: "_blank", rel: "noopener noreferrer" } })
+      if (isRecord(mark.attrs) && typeof mark.attrs.href === "string" && isSafeHref(mark.attrs.href)) {
+        marks.push({ type: "link", attrs: { href: mark.attrs.href, target: "_blank", rel: "noopener noreferrer" } })
+      }
       continue
     }
-    return null
   }
   return marks
 }
@@ -82,7 +82,6 @@ function sanitizeNode(value: unknown, context: SanitizeContext, depth: number): 
   if (value.type === "text") {
     if (typeof value.text !== "string" || value.text.length === 0) return null
     const marks = sanitizeMarks(value.marks)
-    if (marks === null) return null
     return { type: "text", text: value.text, ...(marks?.length ? { marks } : {}) }
   }
 
@@ -93,7 +92,7 @@ function sanitizeNode(value: unknown, context: SanitizeContext, depth: number): 
     if (!content) return null
     if (value.type === "heading") {
       const level = isRecord(value.attrs) ? value.attrs.level : null
-      if (level !== 1 && level !== 2 && level !== 3) return null
+      if (level !== 1 && level !== 2 && level !== 3) return { type: "paragraph", ...(content.length ? { content } : {}) }
       return { type: "heading", attrs: { level }, ...(content.length ? { content } : {}) }
     }
     return { type: "paragraph", ...(content.length ? { content } : {}) }

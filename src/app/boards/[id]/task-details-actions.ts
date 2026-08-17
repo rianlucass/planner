@@ -13,14 +13,14 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 
 export type TaskAttachment = { id: string; originalName: string | null; mimeType: string; sizeBytes: number | null; createdAt: string; signedUrl: string }
 export type TaskUpdate = { id: string; content: string; createdAt: string; updatedAt: string }
-export type TaskDetails = { id: string; title: string; updates: TaskUpdate[]; attachments: TaskAttachment[] }
+export type TaskDetails = { id: string; title: string; taskDate: string | null; assigneeIds: string[]; updates: TaskUpdate[]; attachments: TaskAttachment[] }
 export type TaskDetailsResult = { data: TaskDetails | null; error: string | null }
 export type TaskDetailMutationResult = { success: boolean; error: string | null }
 export type UploadAuthorizationResult = { success: boolean; error: string | null; signedUrl?: string; storagePath?: string }
 export type AttachmentMutationResult = { success: boolean; error: string | null; attachment?: TaskAttachment }
 export type TaskUpdateMutationResult = { success: boolean; error: string | null; update?: TaskUpdate }
 
-type TaskRecord = { id: string; title: string; content: string | null; group_id: string }
+type TaskRecord = { id: string; title: string; content: string | null; group_id: string; task_date: string | null }
 
 function isUuid(value: string) {
   return uuidPattern.test(value)
@@ -29,7 +29,7 @@ function isUuid(value: string) {
 async function getTaskForBoard(taskId: string, boardId: string): Promise<TaskRecord | null> {
   if (!isUuid(taskId) || !isUuid(boardId)) return null
   const supabase = createSupabaseServerClient()
-  const { data: task, error: taskError } = await supabase.from("tasks").select("id, title, content, group_id").eq("id", taskId).maybeSingle()
+  const { data: task, error: taskError } = await supabase.from("tasks").select("id, title, content, group_id, task_date").eq("id", taskId).maybeSingle()
   if (taskError || !task) return null
   const { data: group, error: groupError } = await supabase.from("groups").select("id").eq("id", task.group_id).eq("board_id", boardId).maybeSingle()
   return groupError || !group ? null : task
@@ -52,13 +52,15 @@ export async function getTaskDetails(boardId: string, taskId: string): Promise<T
   if (!task) return { data: null, error: "Tarefa não encontrada neste quadro." }
 
   const supabase = createSupabaseServerClient()
-  const [{ data: updates, error: updatesError }, { data: attachments, error: attachmentsError }] = await Promise.all([
+  const [{ data: updates, error: updatesError }, { data: attachments, error: attachmentsError }, { data: assignees, error: assigneesError }] = await Promise.all([
     supabase.from("task_updates").select("id, content, created_at, updated_at").eq("task_id", taskId).order("created_at", { ascending: false }),
     supabase.from("task_attachments").select("id, storage_path, original_name, mime_type, size_bytes, created_at").eq("task_id", taskId).order("created_at", { ascending: false }),
+    supabase.from("task_assignees").select("member_id").eq("task_id", taskId),
   ])
-  if (updatesError || attachmentsError) {
+  if (updatesError || attachmentsError || assigneesError) {
     if (updatesError) console.error("Erro ao carregar atualizações:", updatesError.message)
     if (attachmentsError) console.error("Erro ao carregar anexos:", attachmentsError.message)
+    if (assigneesError) console.error("Erro ao carregar responsáveis:", assigneesError.message)
     return { data: null, error: "Não foi possível carregar os detalhes da tarefa." }
   }
 
@@ -77,6 +79,8 @@ export async function getTaskDetails(boardId: string, taskId: string): Promise<T
     data: {
       id: task.id,
       title: task.title,
+      taskDate: task.task_date,
+      assigneeIds: (assignees ?? []).map((assignee) => assignee.member_id),
       updates: (updates ?? []).map((update) => ({ id: update.id, content: update.content, createdAt: update.created_at, updatedAt: update.updated_at })),
       attachments: (attachments ?? []).flatMap((attachment) => {
         const signedUrl = signedUrlByPath.get(attachment.storage_path)

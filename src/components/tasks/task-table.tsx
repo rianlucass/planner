@@ -11,12 +11,15 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input"
 import { StatusCell } from "@/components/statuses/status-cell"
 import type { BoardStatus } from "@/components/statuses/status-controls"
+import { TaskDatePicker } from "@/components/tasks/task-date-picker"
 import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet"
+import { TaskAssigneePicker } from "@/components/tasks/task-assignee-picker"
 import { cn } from "@/lib/utils"
+import type { Member } from "@/lib/members"
 
 const initialState: TaskActionState = { error: null, success: false }
 
-type Task = { id: string; title: string; position: number; status_id: string | null }
+type Task = { id: string; title: string; position: number; status_id: string | null; task_date: string | null; assignee_ids: string[] }
 
 function AddTaskRow({ groupId }: { groupId: string }) {
   const [editing, setEditing] = useState(false)
@@ -91,20 +94,22 @@ function TaskActions({ groupId, task }: { groupId: string; task: Task }) {
   )
 }
 
-function SortableTaskRow({ boardId, groupId, task, index, statuses, disabled }: { boardId: string; groupId: string; task: Task; index: number; statuses: BoardStatus[]; disabled: boolean }) {
+function SortableTaskRow({ boardId, groupId, task, index, statuses, members, allMembers, boardMemberIds, disabled }: { boardId: string; groupId: string; task: Task; index: number; statuses: BoardStatus[]; members: Member[]; allMembers: Member[]; boardMemberIds: string[]; disabled: boolean }) {
   const { ref, handleRef, isDragSource, isDropTarget } = useSortable({ id: task.id, index, group: groupId, type: "task", accept: "task", disabled, data: { groupId } })
+  const [taskDate, setTaskDate] = useState(task.task_date)
+  const [assigneeIds, setAssigneeIds] = useState(task.assignee_ids)
   return (
     <tr ref={ref} className={cn("h-9 transition-[opacity,background-color,box-shadow] hover:bg-muted/20", isDragSource && "relative z-10 opacity-40 shadow-lg", isDropTarget && !isDragSource && "bg-primary/10 shadow-[inset_0_2px_0_var(--primary)]")}>
-      <td className="px-1"><div className="flex min-w-0 items-center"><button ref={handleRef} type="button" disabled={disabled} className="grid size-7 shrink-0 touch-none cursor-grab place-items-center rounded text-muted-foreground/60 hover:bg-muted hover:text-foreground active:cursor-grabbing disabled:cursor-default disabled:opacity-40" aria-label={`Mover tarefa ${task.title}`}><GripVertical className="size-3.5" /></button><TaskDetailSheet boardId={boardId} taskId={task.id} title={task.title} /></div></td>
-      <td className="px-3 text-muted-foreground">—</td>
-      <td className="px-3 text-muted-foreground">—</td>
+      <td className="px-1"><div className="flex min-w-0 items-center"><button ref={handleRef} type="button" disabled={disabled} className="grid size-7 shrink-0 touch-none cursor-grab place-items-center rounded text-muted-foreground/60 hover:bg-muted hover:text-foreground active:cursor-grabbing disabled:cursor-default disabled:opacity-40" aria-label={`Mover tarefa ${task.title}`}><GripVertical className="size-3.5" /></button><TaskDetailSheet boardId={boardId} taskId={task.id} title={task.title} taskDate={taskDate} onTaskDateChange={setTaskDate} members={members} allMembers={allMembers} boardMemberIds={boardMemberIds} assigneeIds={assigneeIds} onAssigneeIdsChange={setAssigneeIds} /></div></td>
+      <td className="p-0"><TaskAssigneePicker boardId={boardId} taskId={task.id} members={members} allMembers={allMembers} boardMemberIds={boardMemberIds} value={assigneeIds} onChange={setAssigneeIds} /></td>
+      <td className="p-0"><TaskDatePicker boardId={boardId} taskId={task.id} value={taskDate} onChange={setTaskDate} /></td>
       <td className="p-0"><StatusCell boardId={boardId} groupId={groupId} taskId={task.id} statusId={task.status_id} statuses={statuses} /></td>
       <td className="px-2 text-right"><TaskActions groupId={groupId} task={task} /></td>
     </tr>
   )
 }
 
-export function TaskTable({ boardId, groupId, tasks, statuses, dndDisabled = false }: { boardId: string; groupId: string; tasks: Task[]; statuses: BoardStatus[]; dndDisabled?: boolean }) {
+export function TaskTable({ boardId, groupId, tasks, statuses, members, allMembers, boardMemberIds, dndDisabled = false }: { boardId: string; groupId: string; tasks: Task[]; statuses: BoardStatus[]; members: Member[]; allMembers: Member[]; boardMemberIds: string[]; dndDisabled?: boolean }) {
   return (
     <div className="w-full min-w-0 max-w-full touch-pan-x overflow-x-auto overscroll-x-contain bg-background/20 [contain:inline-size_paint]">
       <table className="w-full min-w-[620px] table-fixed text-left text-xs">
@@ -112,7 +117,7 @@ export function TaskTable({ boardId, groupId, tasks, statuses, dndDisabled = fal
           <tr><th className="w-[48%] px-3 py-2">Tarefa</th><th className="w-[18%] px-3 py-2">Responsável</th><th className="w-[14%] px-3 py-2">Data</th><th className="w-[14%] px-3 py-2">Status</th><th className="w-10 px-2 py-2"><span className="sr-only">Ações</span></th></tr>
         </thead>
         <tbody className="divide-y divide-border/60">
-          {tasks.map((task, index) => <SortableTaskRow key={task.id} boardId={boardId} groupId={groupId} task={task} index={index} statuses={statuses} disabled={dndDisabled} />)}
+          {tasks.map((task, index) => <SortableTaskRow key={task.id} boardId={boardId} groupId={groupId} task={task} index={index} statuses={statuses} members={members} allMembers={allMembers} boardMemberIds={boardMemberIds} disabled={dndDisabled} />)}
         </tbody>
         <tfoot className="border-t"><tr><td colSpan={5}><AddTaskRow groupId={groupId} /></td></tr></tfoot>
       </table>

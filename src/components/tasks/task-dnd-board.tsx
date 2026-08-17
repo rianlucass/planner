@@ -7,8 +7,9 @@ import { move } from "@dnd-kit/helpers"
 import { moveTask } from "@/app/boards/[id]/task-actions"
 import { GroupSection } from "@/components/groups/group-controls"
 import type { BoardStatus } from "@/components/statuses/status-controls"
+import type { Member } from "@/lib/members"
 
-export type PlannerTask = { id: string; title: string; position: number; status_id: string | null }
+export type PlannerTask = { id: string; title: string; position: number; status_id: string | null; task_date: string | null; assignee_ids: string[] }
 export type PlannerGroup = { id: string; name: string; color: string | null; position: number; tasks: PlannerTask[] }
 type TaskBuckets = Record<string, PlannerTask[]>
 
@@ -24,13 +25,15 @@ function findTaskGroup(buckets: TaskBuckets, taskId: string) {
   return Object.keys(buckets).find((groupId) => buckets[groupId].some((task) => task.id === taskId))
 }
 
-export function TaskDndBoard({ boardId, groups, statuses }: { boardId: string; groups: PlannerGroup[]; statuses: BoardStatus[] }) {
+export function TaskDndBoard({ boardId, groups, statuses, members, boardMemberIds }: { boardId: string; groups: PlannerGroup[]; statuses: BoardStatus[]; members: Member[]; boardMemberIds: string[] }) {
   const initialBuckets = createBuckets(groups)
   const [buckets, setBuckets] = useState<TaskBuckets>(initialBuckets)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const bucketsRef = useRef(initialBuckets)
   const snapshotRef = useRef(initialBuckets)
+  const boardMemberSet = new Set(boardMemberIds)
+  const boardMembers = members.filter((member) => boardMemberSet.has(member.id))
 
   function updateBuckets(next: TaskBuckets) {
     bucketsRef.current = next
@@ -76,7 +79,7 @@ export function TaskDndBoard({ boardId, groups, statuses }: { boardId: string; g
     >
       <div className="grid w-full min-w-0 max-w-full gap-4">
         {error && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">{error}</p>}
-        {groups.map((group) => <GroupSection key={group.id} boardId={boardId} group={{ ...group, tasks: buckets[group.id] ?? [] }} statuses={statuses} dndDisabled={saving} />)}
+        {groups.map((group) => <GroupSection key={group.id} boardId={boardId} group={{ ...group, tasks: buckets[group.id] ?? [] }} statuses={statuses} members={boardMembers} allMembers={members} boardMemberIds={boardMemberIds} dndDisabled={saving} />)}
       </div>
     </DragDropProvider>
   )

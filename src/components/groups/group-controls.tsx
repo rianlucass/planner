@@ -11,6 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input"
 import { TaskTable } from "@/components/tasks/task-table"
 import type { BoardStatus } from "@/components/statuses/status-controls"
+import type { Member } from "@/lib/members"
 import { cn } from "@/lib/utils"
 
 const initialState: GroupActionState = { error: null, success: false }
@@ -86,7 +87,7 @@ function DeleteGroupDialog({ boardId, group, open, onOpenChange }: { boardId: st
   )
 }
 
-export function GroupSection({ boardId, group, statuses, dndDisabled = false }: { boardId: string; group: { id: string; name: string; color: string | null; tasks: { id: string; title: string; position: number; status_id: string | null }[] }; statuses: BoardStatus[]; dndDisabled?: boolean }) {
+export function GroupSection({ boardId, group, statuses, members, allMembers, boardMemberIds, dndDisabled = false }: { boardId: string; group: { id: string; name: string; color: string | null; tasks: { id: string; title: string; position: number; status_id: string | null; task_date: string | null; assignee_ids: string[] }[] }; statuses: BoardStatus[]; members: Member[]; allMembers: Member[]; boardMemberIds: string[]; dndDisabled?: boolean }) {
   const [expanded, setExpanded] = useState(true)
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -105,7 +106,7 @@ export function GroupSection({ boardId, group, statuses, dndDisabled = false }: 
           <DropdownMenuContent align="end" className="w-36"><DropdownMenuItem onClick={() => setRenameOpen(true)}><Pencil />Renomear</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}><Trash2 />Excluir</DropdownMenuItem></DropdownMenuContent>
         </DropdownMenu>
       </div>
-      {expanded && <TaskTable boardId={boardId} groupId={group.id} tasks={group.tasks} statuses={statuses} dndDisabled={dndDisabled} />}
+      {expanded && <TaskTable boardId={boardId} groupId={group.id} tasks={group.tasks} statuses={statuses} members={members} allMembers={allMembers} boardMemberIds={boardMemberIds} dndDisabled={dndDisabled} />}
       <RenameGroupDialog boardId={boardId} group={group} open={renameOpen} onOpenChange={setRenameOpen} />
       {deleteOpen && <DeleteGroupDialog boardId={boardId} group={group} open={deleteOpen} onOpenChange={setDeleteOpen} />}
     </section>

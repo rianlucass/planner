@@ -2,10 +2,12 @@
 
 import { revalidatePath } from "next/cache"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { isValidDateOnly } from "@/lib/task-date"
 
 export type TaskActionState = { error: string | null; success: boolean }
 export type MoveTaskInput = { boardId: string; taskId: string; sourceGroupId: string; destinationGroupId: string; destinationPosition: number }
 export type MoveTaskResult = { error: string | null; success: boolean }
+export type UpdateTaskDateInput = { boardId: string; taskId: string; date: string | null }
 
 const failure: TaskActionState = { error: "Não foi possível concluir a operação.", success: false }
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -93,6 +95,35 @@ export async function deleteTask(_state: TaskActionState, formData: FormData): P
   if (error || !data) {
     if (error) console.error("Erro ao excluir tarefa:", error.message)
     return failure
+  }
+
+  revalidatePath(`/boards/${boardId}`)
+  return { error: null, success: true }
+}
+
+export async function updateTaskDate(input: UpdateTaskDateInput): Promise<TaskActionState> {
+  if (!input || typeof input !== "object") return { error: "Dados da atualização inválidos.", success: false }
+  const { boardId, taskId, date } = input
+  if (!isUuid(boardId) || !isUuid(taskId)) return { error: "Quadro ou tarefa inválidos.", success: false }
+  if (date !== null && (typeof date !== "string" || !isValidDateOnly(date))) return { error: "Informe uma data válida.", success: false }
+
+  const supabase = createSupabaseServerClient()
+  const { data: task, error: taskError } = await supabase.from("tasks").select("id, group_id").eq("id", taskId).maybeSingle()
+  if (taskError || !task) {
+    if (taskError) console.error("Erro ao validar tarefa para atualização da data:", taskError.message)
+    return { error: "Tarefa não encontrada.", success: false }
+  }
+
+  const { data: group, error: groupError } = await supabase.from("groups").select("id").eq("id", task.group_id).eq("board_id", boardId).maybeSingle()
+  if (groupError || !group) {
+    if (groupError) console.error("Erro ao validar quadro da tarefa:", groupError.message)
+    return { error: "A tarefa não pertence ao quadro informado.", success: false }
+  }
+
+  const { data: updatedTask, error: updateError } = await supabase.from("tasks").update({ task_date: date, updated_at: new Date().toISOString() }).eq("id", taskId).eq("group_id", task.group_id).select("id").maybeSingle()
+  if (updateError || !updatedTask) {
+    if (updateError) console.error("Erro ao atualizar data da tarefa:", updateError.message)
+    return { error: "Não foi possível salvar a data.", success: false }
   }
 
   revalidatePath(`/boards/${boardId}`)

@@ -9,6 +9,9 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { TaskAssigneePicker } from "@/components/tasks/task-assignee-picker"
+import { TaskDatePicker } from "@/components/tasks/task-date-picker"
+import type { Member } from "@/lib/members"
 
 const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"])
 const maxFileSize = 5 * 1024 * 1024
@@ -29,7 +32,7 @@ function UpdateContent({ content }: { content: string }) {
   return <p className="max-w-full whitespace-pre-wrap break-words text-sm leading-6">{parts.map((part, index) => /^https?:\/\//.test(part) ? <a key={`${part}-${index}`} href={part} target="_blank" rel="noopener noreferrer" className="break-all text-primary underline underline-offset-2 hover:opacity-80">{part}</a> : part)}</p>
 }
 
-export function TaskDetailSheet({ boardId, taskId, title }: { boardId: string; taskId: string; title: string }) {
+export function TaskDetailSheet({ boardId, taskId, title, taskDate, onTaskDateChange, members, allMembers, boardMemberIds, assigneeIds, onAssigneeIdsChange }: { boardId: string; taskId: string; title: string; taskDate: string | null; onTaskDateChange: (value: string | null) => void; members: Member[]; allMembers: Member[]; boardMemberIds: string[]; assigneeIds: string[]; onAssigneeIdsChange: (value: string[]) => void }) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [details, setDetails] = useState<TaskDetails | null>(null)
@@ -167,6 +170,16 @@ export function TaskDetailSheet({ boardId, taskId, title }: { boardId: string; t
     setDeleteUpdateTarget(null)
   }
 
+  function changeTaskDate(value: string | null) {
+    onTaskDateChange(value)
+    setDetails((current) => current ? { ...current, taskDate: value } : current)
+  }
+
+  function changeAssignees(value: string[]) {
+    onAssigneeIdsChange(value)
+    setDetails((current) => current ? { ...current, assigneeIds: value } : current)
+  }
+
   function startResize(event: React.PointerEvent<HTMLDivElement>) {
     if (mobile) return
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -198,6 +211,7 @@ export function TaskDetailSheet({ boardId, taskId, title }: { boardId: string; t
           <SheetHeader className="min-w-0 max-w-full border-b px-4 py-4 pr-14 sm:px-5">
             <SheetTitle className="max-w-full break-words text-base leading-snug font-semibold">{details?.title ?? title}</SheetTitle>
             <SheetDescription className="max-w-full break-words">Atualizações e imagens relacionadas a esta tarefa.</SheetDescription>
+            <div className="mt-1 flex min-w-0 max-w-full flex-wrap gap-2"><TaskDatePicker boardId={boardId} taskId={taskId} value={details ? details.taskDate : taskDate} onChange={changeTaskDate} variant="property" /><TaskAssigneePicker boardId={boardId} taskId={taskId} members={members} allMembers={allMembers} boardMemberIds={boardMemberIds} value={details ? details.assigneeIds : assigneeIds} onChange={changeAssignees} variant="property" /></div>
           </SheetHeader>
 
           <div className="min-w-0 max-w-full flex-1 overflow-y-auto p-4 sm:p-5">

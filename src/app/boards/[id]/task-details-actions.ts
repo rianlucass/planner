@@ -37,7 +37,7 @@ async function getTaskForBoard(taskId: string, boardId: string): Promise<TaskRec
 }
 
 function validateFile(mimeType: string, sizeBytes: number) {
-  if (!allowedMimeTypes.has(mimeType)) return "Envie somente imagens JPEG, PNG ou WebP."
+  if (!allowedMimeTypes.has(mimeType)) return "Formato não suportado. Use JPG, PNG ou WebP."
   if (!Number.isInteger(sizeBytes) || sizeBytes <= 0 || sizeBytes > maxFileSize) return "A imagem deve ter no máximo 5 MB."
   return null
 }
@@ -105,6 +105,41 @@ export async function createTaskUpdate(boardId: string, taskId: string, contentJ
   }
   revalidatePath(`/boards/${boardId}`)
   return { success: true, error: null, update: { id: data.id, content: data.content, contentJson: sanitizeTaskUpdateDocument(data.content_json)?.document ?? sanitized.document, createdAt: data.created_at, updatedAt: data.updated_at } }
+}
+
+export async function updateTaskUpdate(boardId: string, taskId: string, updateId: string, contentJson: unknown): Promise<TaskUpdateMutationResult> {
+  const task = await getTaskForBoard(taskId, boardId)
+  if (!task || !isUuid(updateId)) return { success: false, error: "Atualização inválida." }
+
+  const sanitized = sanitizeTaskUpdateDocument(contentJson)
+  if (!sanitized) return { success: false, error: "O conteúdo Rich Text é inválido ou está vazio." }
+
+  const updatedAt = new Date().toISOString()
+  const { data, error } = await createSupabaseServerClient()
+    .from("task_updates")
+    .update({ content: sanitized.text, content_json: sanitized.document, updated_at: updatedAt })
+    .eq("id", updateId)
+    .eq("task_id", taskId)
+    .select("id, content, content_json, created_at, updated_at")
+    .maybeSingle()
+
+  if (error || !data) {
+    if (error) console.error("Erro ao editar atualização:", error.message)
+    return { success: false, error: "Não foi possível salvar as alterações." }
+  }
+
+  revalidatePath(`/boards/${boardId}`)
+  return {
+    success: true,
+    error: null,
+    update: {
+      id: data.id,
+      content: data.content,
+      contentJson: sanitizeTaskUpdateDocument(data.content_json)?.document ?? sanitized.document,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    },
+  }
 }
 
 export async function deleteTaskUpdate(boardId: string, taskId: string, updateId: string): Promise<TaskDetailMutationResult> {

@@ -1,11 +1,12 @@
 "use client"
 
 import Image from "next/image"
-import { useRef, useState } from "react"
-import { ImageIcon, Loader2, MoreHorizontal, Paperclip, Plus, Trash2, Upload } from "lucide-react"
+import { useId, useRef, useState } from "react"
+import { ImageIcon, Loader2, MoreHorizontal, Paperclip, Pencil, Plus, Trash2, Upload } from "lucide-react"
 
 import { authorizeTaskAttachmentUpload, confirmTaskAttachmentUpload, createTaskUpdate, deleteTaskAttachment, deleteTaskUpdate, getTaskDetails, type TaskAttachment, type TaskDetails, type TaskUpdate } from "@/app/boards/[id]/task-details-actions"
-import { Button } from "@/components/ui/button"
+import { TaskUpdateEditDialog } from "@/components/tasks/task-update-edit-dialog"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
@@ -14,11 +15,13 @@ import { TaskDatePicker } from "@/components/tasks/task-date-picker"
 import { TaskUpdateEditor, TaskUpdateRichContent } from "@/components/tasks/task-update-editor"
 import type { Member } from "@/lib/members"
 import { emptyTaskUpdateDocument, type TaskUpdateComposerValue } from "@/lib/task-update-content"
+import { cn } from "@/lib/utils"
 
 const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"])
 const maxFileSize = 5 * 1024 * 1024
 const panelWidthKey = "planner-task-panel-width"
 const signedImageLoader = ({ src }: { src: string }) => src
+const mimeTypeByExtension: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" }
 
 function formatSize(size: number | null) {
   if (!size) return ""
@@ -32,6 +35,19 @@ function formatUpdateDate(value: string) {
 function LegacyUpdateContent({ content }: { content: string }) {
   const parts = content.split(/(https?:\/\/[^\s]+)/g)
   return <p className="max-w-full whitespace-pre-wrap break-words text-sm leading-6">{parts.map((part, index) => /^https?:\/\//.test(part) ? <a key={`${part}-${index}`} href={part} target="_blank" rel="noopener noreferrer" className="break-all text-primary underline underline-offset-2 hover:opacity-80">{part}</a> : part)}</p>
+}
+
+function normalizeMobileImageFile(file: File) {
+  const mimeType = file.type.toLowerCase()
+  if (allowedMimeTypes.has(mimeType)) return file
+
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? ""
+  const inferredMimeType = mimeTypeByExtension[extension]
+  if ((mimeType === "" || mimeType === "image/jpg") && inferredMimeType) {
+    return new File([file], file.name, { type: inferredMimeType, lastModified: file.lastModified })
+  }
+
+  return file
 }
 
 const emptyComposer: TaskUpdateComposerValue = { document: emptyTaskUpdateDocument, text: "", isEmpty: true }
@@ -48,9 +64,11 @@ export function TaskDetailSheet({ boardId, taskId, title, taskDate, onTaskDateCh
   const [preview, setPreview] = useState<TaskAttachment | null>(null)
   const [deleteAttachmentTarget, setDeleteAttachmentTarget] = useState<TaskAttachment | null>(null)
   const [deleteUpdateTarget, setDeleteUpdateTarget] = useState<TaskUpdate | null>(null)
+  const [editUpdateTarget, setEditUpdateTarget] = useState<TaskUpdate | null>(null)
   const [panelWidth, setPanelWidth] = useState(0)
   const [mobile, setMobile] = useState(false)
   const [resizing, setResizing] = useState(false)
+  const fileInputId = useId()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const resizeStartRef = useRef({ x: 0, width: 0 })
   const panelWidthRef = useRef(0)
@@ -105,7 +123,7 @@ export function TaskDetailSheet({ boardId, taskId, title, taskDate, onTaskDateCh
   }
 
   function validateFile(file: File) {
-    if (!allowedMimeTypes.has(file.type)) return "Envie somente imagens JPEG, PNG ou WebP."
+    if (!allowedMimeTypes.has(file.type)) return "Formato não suportado. Use JPG, PNG ou WebP."
     if (file.size <= 0 || file.size > maxFileSize) return "Cada imagem deve ter no máximo 5 MB."
     return null
   }
@@ -114,34 +132,40 @@ export function TaskDetailSheet({ boardId, taskId, title, taskDate, onTaskDateCh
     if (files.length === 0) return
     setUploading(true)
     setError(null)
-    for (const file of files) {
-      const validationError = validateFile(file)
-      if (validationError) {
-        setError(validationError)
-        continue
+    try {
+      for (const selectedFile of files) {
+        const file = normalizeMobileImageFile(selectedFile)
+        const validationError = validateFile(file)
+        if (validationError) {
+          setError(validationError)
+          continue
+        }
+        const authorization = await authorizeTaskAttachmentUpload(boardId, taskId, file.name || "imagem", file.type, file.size)
+        if (!authorization.success || !authorization.signedUrl || !authorization.storagePath) {
+          setError(authorization.error ?? "Não foi possível autorizar o upload.")
+          continue
+        }
+        const body = new FormData()
+        body.append("cacheControl", "3600")
+        body.append("", file)
+        const response = await fetch(authorization.signedUrl, { method: "PUT", headers: { "x-upsert": "false" }, body })
+        if (!response.ok) {
+          setError("Não foi possível enviar a imagem ao Storage.")
+          continue
+        }
+        const confirmation = await confirmTaskAttachmentUpload(boardId, taskId, authorization.storagePath, file.name || "imagem")
+        if (!confirmation.success || !confirmation.attachment) {
+          setError(confirmation.error ?? "Não foi possível registrar a imagem.")
+          continue
+        }
+        setDetails((current) => current ? { ...current, attachments: [confirmation.attachment as TaskAttachment, ...current.attachments] } : current)
       }
-      const authorization = await authorizeTaskAttachmentUpload(boardId, taskId, file.name || "imagem", file.type, file.size)
-      if (!authorization.success || !authorization.signedUrl || !authorization.storagePath) {
-        setError(authorization.error ?? "Não foi possível autorizar o upload.")
-        continue
-      }
-      const body = new FormData()
-      body.append("cacheControl", "3600")
-      body.append("", file)
-      const response = await fetch(authorization.signedUrl, { method: "PUT", headers: { "x-upsert": "false" }, body })
-      if (!response.ok) {
-        setError("Não foi possível enviar a imagem ao Storage.")
-        continue
-      }
-      const confirmation = await confirmTaskAttachmentUpload(boardId, taskId, authorization.storagePath, file.name || "imagem")
-      if (!confirmation.success || !confirmation.attachment) {
-        setError(confirmation.error ?? "Não foi possível registrar a imagem.")
-        continue
-      }
-      setDetails((current) => current ? { ...current, attachments: [confirmation.attachment as TaskAttachment, ...current.attachments] } : current)
+    } catch {
+      setError("Não foi possível enviar a imagem. Tente novamente.")
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
     }
-    setUploading(false)
-    if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
   async function removeAttachment() {
@@ -164,6 +188,11 @@ export function TaskDetailSheet({ boardId, taskId, title, taskDate, onTaskDateCh
     }
     setDetails((current) => current ? { ...current, updates: current.updates.filter((update) => update.id !== deleteUpdateTarget.id) } : current)
     setDeleteUpdateTarget(null)
+  }
+
+  function saveEditedUpdate(update: TaskUpdate) {
+    setDetails((current) => current ? { ...current, updates: current.updates.map((item) => item.id === update.id ? update : item) } : current)
+    setEditUpdateTarget(null)
   }
 
   function changeTaskDate(value: string | null) {
@@ -223,11 +252,11 @@ export function TaskDetailSheet({ boardId, taskId, title, taskDate, onTaskDateCh
 
                 <section className="grid min-w-0 max-w-full gap-3">
                   <div><h3 className="text-sm font-semibold">Atualizações</h3><p className="mt-0.5 text-xs text-muted-foreground">Mais recentes primeiro.</p></div>
-                  {details.updates.length === 0 ? <div className="rounded-lg border border-dashed px-4 py-8 text-center text-xs text-muted-foreground">Nenhuma atualização publicada.</div> : <div className="grid min-w-0 max-w-full gap-3">{details.updates.map((update) => <article key={update.id} className="min-w-0 max-w-full rounded-lg border bg-card/60 p-4">{update.contentJson ? <TaskUpdateRichContent content={update.contentJson} /> : <LegacyUpdateContent content={update.content} />}<footer className="mt-4 flex min-w-0 items-center justify-between gap-3 border-t pt-3 text-[11px] text-muted-foreground"><span className="min-w-0 break-words">{formatUpdateDate(update.createdAt)}{new Date(update.updatedAt).getTime() - new Date(update.createdAt).getTime() > 1000 && " • Editado"}</span><DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" aria-label="Ações da atualização" />}><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem variant="destructive" onClick={() => setDeleteUpdateTarget(update)}><Trash2 />Excluir</DropdownMenuItem></DropdownMenuContent></DropdownMenu></footer></article>)}</div>}
+                  {details.updates.length === 0 ? <div className="rounded-lg border border-dashed px-4 py-8 text-center text-xs text-muted-foreground">Nenhuma atualização publicada.</div> : <div className="grid min-w-0 max-w-full gap-3">{details.updates.map((update) => <article key={update.id} className="min-w-0 max-w-full rounded-lg border bg-card/60 p-4">{update.contentJson ? <TaskUpdateRichContent content={update.contentJson} /> : <LegacyUpdateContent content={update.content} />}<footer className="mt-4 flex min-w-0 items-center justify-between gap-3 border-t pt-3 text-[11px] text-muted-foreground"><span className="min-w-0 break-words">{formatUpdateDate(update.createdAt)}{new Date(update.updatedAt).getTime() - new Date(update.createdAt).getTime() > 1000 && " • Editado"}</span><DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" aria-label="Ações da atualização" />}><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setEditUpdateTarget(update)}><Pencil />Editar</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => setDeleteUpdateTarget(update)}><Trash2 />Excluir</DropdownMenuItem></DropdownMenuContent></DropdownMenu></footer></article>)}</div>}
                 </section>
 
                 <section className="grid min-w-0 max-w-full gap-3">
-                  <div className="flex min-w-0 max-w-full flex-col gap-3 min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-between"><div className="min-w-0"><h3 className="text-sm font-semibold">Anexos</h3><p className="mt-0.5 break-words text-xs text-muted-foreground">JPEG, PNG ou WebP, até 5 MB.</p></div><input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={(event) => void uploadFiles(Array.from(event.target.files ?? []))} /><Button className="w-full min-[420px]:w-auto" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading}>{uploading ? <Loader2 className="animate-spin" /> : <Upload />}Anexar imagens</Button></div>
+                  <div className="flex min-w-0 max-w-full flex-col gap-3 min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-between"><div className="min-w-0"><h3 className="text-sm font-semibold">Anexos</h3><p className="mt-0.5 break-words text-xs text-muted-foreground">JPEG, PNG ou WebP, até 5 MB.</p></div><input id={fileInputId} ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple disabled={uploading} className="sr-only" onChange={(event) => { const files = Array.from(event.currentTarget.files ?? []); if (files.length > 0) void uploadFiles(files) }} /><label htmlFor={uploading ? undefined : fileInputId} aria-disabled={uploading} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "h-10 w-full cursor-pointer min-[420px]:h-8 min-[420px]:w-auto", uploading && "pointer-events-none opacity-50")}>{uploading ? <Loader2 className="animate-spin" /> : <Upload />}Anexar imagens</label></div>
                   {details.attachments.length === 0 ? <div className="flex min-h-28 flex-col items-center justify-center rounded-lg border border-dashed text-center text-muted-foreground"><Paperclip className="mb-2 size-5" /><p className="text-xs">Nenhuma imagem anexada.</p></div> : <div className="grid min-w-0 max-w-full grid-cols-1 gap-3 min-[400px]:grid-cols-2 xl:grid-cols-3">{details.attachments.map((attachment) => <div key={attachment.id} className="group relative min-w-0 max-w-full overflow-hidden rounded-lg border bg-muted/20"><button type="button" onClick={() => setPreview(attachment)} className="relative block aspect-video w-full overflow-hidden bg-black/20" aria-label={`Visualizar ${attachment.originalName ?? "imagem"}`}><Image src={attachment.signedUrl} alt={attachment.originalName ?? "Imagem anexada"} fill sizes="(min-width: 1280px) 18vw, 28vw" unoptimized loader={signedImageLoader} className="object-cover transition-transform group-hover:scale-105" /></button><div className="flex min-w-0 max-w-full items-center gap-2 px-2 py-1.5"><ImageIcon className="size-3 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate text-[11px]" title={attachment.originalName ?? undefined}>{attachment.originalName ?? "Imagem"}</span><span className="shrink-0 text-[10px] text-muted-foreground">{formatSize(attachment.sizeBytes)}</span><Button variant="ghost" size="icon-xs" aria-label="Excluir anexo" onClick={() => setDeleteAttachmentTarget(attachment)}><Trash2 /></Button></div></div>)}</div>}
                 </section>
               </div>
@@ -236,6 +265,8 @@ export function TaskDetailSheet({ boardId, taskId, title, taskDate, onTaskDateCh
           </div>
         </SheetContent>
       </Sheet>
+
+      {editUpdateTarget && <TaskUpdateEditDialog boardId={boardId} taskId={taskId} update={editUpdateTarget} onCancel={() => setEditUpdateTarget(null)} onSaved={saveEditedUpdate} />}
 
       <Dialog open={Boolean(preview)} onOpenChange={(value) => { if (!value) setPreview(null) }}>{preview && <DialogContent className="sm:max-w-4xl"><DialogHeader><DialogTitle>{preview.originalName ?? "Imagem anexada"}</DialogTitle><DialogDescription>{formatSize(preview.sizeBytes)}</DialogDescription></DialogHeader><div className="flex max-h-[75vh] items-center justify-center overflow-hidden rounded-lg bg-black/40"><Image src={preview.signedUrl} alt={preview.originalName ?? "Imagem anexada"} width={1600} height={1200} unoptimized loader={signedImageLoader} className="max-h-[75vh] w-auto max-w-full object-contain" /></div></DialogContent>}</Dialog>
 

@@ -13,6 +13,18 @@ export const emptyTaskUpdateDocument: TaskUpdateDocument = {
   content: [{ type: "paragraph" }],
 }
 
+export function plainTextTaskUpdateDocument(value: string): TaskUpdateDocument {
+  const lines = value.replace(/\r\n?/g, "\n").split("\n")
+
+  return {
+    type: "doc",
+    content: lines.map((line) => ({
+      type: "paragraph",
+      ...(line ? { content: [{ type: "text", text: line }] } : {}),
+    })),
+  }
+}
+
 const allowedFontSizes = new Set(["14px", "16px", "18px", "20px", "24px"])
 const inlineNodeTypes = new Set(["text", "hardBreak"])
 const blockNodeTypes = new Set(["paragraph", "heading", "bulletList", "orderedList", "blockquote"])

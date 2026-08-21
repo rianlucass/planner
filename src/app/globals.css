@@ -135,6 +135,26 @@
     margin-top: 0.65rem;
   }
 
+  .rich-text-content [data-font-size="14px"] {
+    font-size: 14px;
+  }
+
+  .rich-text-content [data-font-size="16px"] {
+    font-size: 16px;
+  }
+
+  .rich-text-content [data-font-size="18px"] {
+    font-size: 18px;
+  }
+
+  .rich-text-content [data-font-size="20px"] {
+    font-size: 20px;
+  }
+
+  .rich-text-content [data-font-size="24px"] {
+    font-size: 24px;
+  }
+
   .rich-text-content h1,
   .rich-text-content h2,
   .rich-text-content h3 {

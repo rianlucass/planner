@@ -76,3 +76,26 @@ export async function deleteGroup(_state: GroupActionState, formData: FormData):
   revalidatePath(`/boards/${boardId}`)
   return { error: null, success: true }
 }
+
+export async function reorderGroups(input: { boardId: string; groupIds: string[] }): Promise<GroupActionState> {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  if (!input || typeof input !== "object" || typeof input.boardId !== "string" || !uuid.test(input.boardId) ||
+    !Array.isArray(input.groupIds) || input.groupIds.length === 0 ||
+    !input.groupIds.every((id) => typeof id === "string" && uuid.test(id)) ||
+    new Set(input.groupIds.map((id) => id.toLowerCase())).size !== input.groupIds.length) {
+    return { success: false, error: "Ordem dos grupos inválida." }
+  }
+  try {
+    // Validate the board and exact membership under a lock, updating only position.
+    const { error } = await createSupabaseServerClient().rpc("reorder_groups", {
+      p_board_id: input.boardId,
+      p_group_ids: input.groupIds,
+    })
+    if (error) return { success: false, error: "Não foi possível salvar a ordem. O quadro pode ter sido alterado; tente novamente." }
+    // This route is force-dynamic. Revalidation would remount its groups-based key
+    // and reset expansion and panels; the next page load already reads fresh data.
+    return { success: true, error: null }
+  } catch {
+    return { success: false, error: "Não foi possível salvar a ordem dos grupos. Tente novamente." }
+  }
+}

@@ -1,8 +1,10 @@
 "use client"
 
 import { useActionState, useEffect, useState } from "react"
-import { useDroppable } from "@dnd-kit/react"
-import { ChevronDown, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
+import { KeyboardSensor, PointerSensor, useDroppable } from "@dnd-kit/react"
+import { PointerActivationConstraints } from "@dnd-kit/dom"
+import { useSortable } from "@dnd-kit/react/sortable"
+import { ChevronDown, GripVertical, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react"
 
 import { createGroup, deleteGroup, updateGroup, type GroupActionState } from "@/app/boards/[id]/actions"
 import { Button } from "@/components/ui/button"
@@ -16,6 +18,12 @@ import { cn } from "@/lib/utils"
 
 const initialState: GroupActionState = { error: null, success: false }
 const colors = ["#6366f1", "#8b5cf6", "#ec4899", "#f59e0b", "#10b981", "#06b6d4"] as const
+
+const groupSensors = [PointerSensor.configure({
+  activationConstraints: (event) => event.pointerType === "touch"
+    ? [new PointerActivationConstraints.Delay({ value: 300, tolerance: 5 })]
+    : [new PointerActivationConstraints.Distance({ value: 6 })],
+}), KeyboardSensor]
 
 function GroupForm({ boardId, group, onSuccess }: { boardId: string; group?: { id: string; name: string }; onSuccess: () => void }) {
   const action = group ? updateGroup : createGroup
@@ -87,28 +95,32 @@ function DeleteGroupDialog({ boardId, group, open, onOpenChange }: { boardId: st
   )
 }
 
-export function GroupSection({ boardId, group, statuses, members, allMembers, boardMemberIds, dndDisabled = false }: { boardId: string; group: { id: string; name: string; color: string | null; tasks: { id: string; title: string; position: number; status_id: string | null; task_date: string | null; assignee_ids: string[] }[] }; statuses: BoardStatus[]; members: Member[]; allMembers: Member[]; boardMemberIds: string[]; dndDisabled?: boolean }) {
+export function GroupSection({ boardId, group, index, dropEdge, statuses, members, allMembers, boardMemberIds, dndDisabled = false }: { boardId: string; index: number; dropEdge?: "before" | "after"; group: { id: string; name: string; color: string | null; tasks: { id: string; title: string; position: number; status_id: string | null; task_date: string | null; assignee_ids: string[] }[] }; statuses: BoardStatus[]; members: Member[]; allMembers: Member[]; boardMemberIds: string[]; dndDisabled?: boolean }) {
   const [expanded, setExpanded] = useState(true)
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const { ref: groupRef, handleRef, isDragSource, isDropTarget: isGroupDropTarget } = useSortable({ id: `group:${group.id}`, index, group: boardId, type: "board-group", accept: "board-group", disabled: dndDisabled, sensors: groupSensors, transition: { duration: 150 }, data: { groupId: group.id, name: group.name, color: group.color, count: group.tasks.length } })
   const { ref, isDropTarget } = useDroppable({ id: group.id, type: "group", accept: "task", collisionPriority: -1, disabled: dndDisabled || !expanded, data: { groupId: group.id } })
   return (
-    <section ref={ref} className={cn("w-full min-w-0 max-w-full overflow-hidden rounded-lg border bg-card/80 shadow-sm transition-[border-color,box-shadow]", isDropTarget && "border-primary/70 ring-2 ring-primary/20")}>
-      <div className="flex h-11 min-w-0 max-w-full items-center gap-2 border-b px-3" style={{ borderLeftWidth: 3, borderLeftColor: group.color ?? "#6366f1" }}>
-        <button type="button" onClick={() => setExpanded((value) => !value)} className="flex min-w-0 flex-1 items-center gap-2 text-left" aria-expanded={expanded}>
-          <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !expanded && "-rotate-90")} />
-          <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: group.color ?? "#6366f1" }} />
-          <h2 className="truncate text-sm font-semibold">{group.name}</h2>
-          <span className="shrink-0 text-[11px] text-muted-foreground">— {group.tasks.length}</span>
-        </button>
-        <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Ações de ${group.name}`} />}><MoreHorizontal /></DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-36"><DropdownMenuItem onClick={() => setRenameOpen(true)}><Pencil />Renomear</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}><Trash2 />Excluir</DropdownMenuItem></DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-      {expanded && <TaskTable boardId={boardId} groupId={group.id} tasks={group.tasks} statuses={statuses} members={members} allMembers={allMembers} boardMemberIds={boardMemberIds} dndDisabled={dndDisabled} />}
-      <RenameGroupDialog boardId={boardId} group={group} open={renameOpen} onOpenChange={setRenameOpen} />
-      {deleteOpen && <DeleteGroupDialog boardId={boardId} group={group} open={deleteOpen} onOpenChange={setDeleteOpen} />}
-    </section>
+    <div ref={groupRef} className={cn("min-w-0 rounded-lg", isDragSource && "opacity-45", isGroupDropTarget && !isDragSource && "ring-2 ring-primary/30", dropEdge === "before" && "shadow-[0_-3px_0_var(--primary)]", dropEdge === "after" && "shadow-[0_3px_0_var(--primary)]")}>
+      <section ref={ref} className={cn("w-full min-w-0 max-w-full overflow-hidden rounded-lg border bg-card/80 shadow-sm transition-[border-color,box-shadow]", isDropTarget && "border-primary/70 ring-2 ring-primary/20")}>
+        <div className="flex h-11 min-w-0 max-w-full items-center gap-2 border-b px-3" style={{ borderLeftWidth: 3, borderLeftColor: group.color ?? "#6366f1" }}>
+          <button ref={handleRef} type="button" disabled={dndDisabled} aria-label={`Mover grupo ${group.name}`} title="Arraste para reordenar; no celular, mantenha pressionado" className="grid size-8 shrink-0 touch-none cursor-grab place-items-center rounded text-muted-foreground/60 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing disabled:cursor-default disabled:opacity-40"><GripVertical className="size-4" /></button>
+          <button type="button" onClick={() => setExpanded((value) => !value)} className="flex min-w-0 flex-1 items-center gap-2 text-left" aria-expanded={expanded}>
+            <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !expanded && "-rotate-90")} />
+            <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: group.color ?? "#6366f1" }} />
+            <h2 className="truncate text-sm font-semibold">{group.name}</h2>
+            <span className="shrink-0 text-[11px] text-muted-foreground">— {group.tasks.length}</span>
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Ações de ${group.name}`} />}><MoreHorizontal /></DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-36"><DropdownMenuItem onClick={() => setRenameOpen(true)}><Pencil />Renomear</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}><Trash2 />Excluir</DropdownMenuItem></DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        {expanded && <TaskTable boardId={boardId} groupId={group.id} tasks={group.tasks} statuses={statuses} members={members} allMembers={allMembers} boardMemberIds={boardMemberIds} dndDisabled={dndDisabled} />}
+        <RenameGroupDialog boardId={boardId} group={group} open={renameOpen} onOpenChange={setRenameOpen} />
+        {deleteOpen && <DeleteGroupDialog boardId={boardId} group={group} open={deleteOpen} onOpenChange={setDeleteOpen} />}
+      </section>
+    </div>
   )
 }
